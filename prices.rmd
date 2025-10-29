@@ -1,0 +1,113 @@
+---
+title: "For-Profit Postsecondary: Daily Prices"
+output: html_document
+params:
+  use_tiingo: false   # set to true if you have a Tiingo API key and want delisted coverage
+  start_date: "1990-01-01"
+  end_date: !r format(Sys.Date(), "%Y-%m-%d")
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidyquant)
+library(lubridate)
+library(glue)
+library(janitor)
+
+# Optional: tidymodels for later steps (kept loaded per your workflow)
+library(tidymodels)
+
+start_date=as_date("1990-01-01")
+  end_date=as_date(Sys.Date())
+
+# ---- Universe of for-profit postsecondary firms (publicly traded) ----
+# Keep this as a *data frame* so you can add notes, alt tickers, delisting dates, etc.
+edu_universe <- tribble(
+  ~ticker, ~company,                                ~notes,
+  "STRA",  "Strategic Education (Strayer/Capella)", "continuous (Capella delisted 2018, combined as STRA)",
+  "ATGE",  "Adtalem Global Education (DeVry)",      "was DV pre-2017; ATGE since 2017",
+  "PRDO",  "Perdoceo Education",                    "was CECO; ticker changed to PRDO in 2020",
+  "APEI",  "American Public Education",             "continuous",
+  "LOPE",  "Grand Canyon Education",                "services co. after GCU nonprofit split (2008 IPO)",
+  "UTI",   "Universal Technical Institute",         "continuous (NYSE: UTI)",
+  "LINC",  "Lincoln Educational Services",          "continuous",
+  "LAUR",  "Laureate Education",                    "2017 IPO, now leaner footprint",
+  # Historical/delisted (Yahoo often spotty; Tiingo better)
+  "APOL",  "Apollo Education (Univ. of Phoenix)",   "taken private 2017; delisted",
+  "ESI",   "ITT Educational Services",              "bankrupt 2016; delisted",
+  "COCO",  "Corinthian Colleges",                   "bankrupt 2015; delisted",
+  "ZVO",   "Zovio (Bridgepoint)",                   "delisted 2022; earlier ticker BPI"
+) %>% distinct(ticker, .keep_all = TRUE)
+
+
+# Helper: safe pull wrapper
+tq_get_safe <- purrr::safely(tq_get)
+
+
+params<-list(use_tiingo=FALSE)
+# If using Tiingo, set your key in .Renviron as TIINGO_API_KEY=xxxx and restart R.
+use_tiingo <- isTRUE(params$use_tiingo)
+
+# Choose source + arguments
+get_source <- if (use_tiingo) "tiingo" else "yahoo"
+
+extra_args <- list()
+if (use_tiingo) {
+  # include_delisted is respected by tidyquant when using tiingo
+  extra_args$from = start_date
+  extra_args$to   = end_date
+  # tq_get(..., get = "tiingo") uses the tiingo equities endpoint (adjusted prices).
+}
+
+# Pull prices
+prices_raw <- edu_universe %>%
+  mutate(
+    data = map(
+      ticker,
+      ~{
+        res <- tq_get_safe(.x,
+                           from = start_date,
+                           to   = end_date,
+                           get  = get_source
+                           #!!!extra_args
+                           )
+        if (!is.null(res$error)) {
+          message(glue("⚠️  Failed: {.x} | {res$error$message %||% 'Unknown error'}"))
+          tibble()
+        } else {
+          res$result %>% mutate(ticker = .x)
+        }
+      }
+    )
+  )
+
+# Unnest and standardize columns across sources
+prices <- prices_raw %>%
+  select(ticker, company, notes, data) %>%
+  unnest(data) %>%
+  clean_names()
+
+# Normalize column names across Yahoo/Tiingo to a common schema
+# Yahoo: date, open, high, low, close, volume, adjusted, symbol
+# Tiingo: date, open, high, low, close, volume, adj_close, etc.
+prices <- prices %>%
+  mutate(
+    adjusted = coalesce(adjusted, adj_close, close),  # best available adjusted; fallback to close
+    price_source = get_source
+  ) %>%
+  select(date, ticker, company, adjusted, open, high, low, close, volume, price_source, everything()) %>%
+  arrange(ticker, date)
+
+# Basic sanity checks
+coverage_summary <- prices %>%
+  group_by(ticker, company) %>%
+  summarize(
+    first_date = min(date, na.rm = TRUE),
+    last_date  = max(date, na.rm = TRUE),
+    n_days     = n(),
+    n_na_adj   = sum(is.na(adjusted)),
+    .groups = "drop"
+  ) %>% arrange(first_date)
+
+coverage_summary
+
