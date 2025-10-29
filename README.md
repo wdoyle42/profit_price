@@ -113,8 +113,6 @@ The main output is an academic paper suitable for publication, generated from th
 
 ## License
 
-Please check with the repository owner for licensing information.
-
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contact
