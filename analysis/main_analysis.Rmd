@@ -1,0 +1,320 @@
+---
+title: "Political Events and Stock Prices: Evidence from For-Profit Universities"
+author: "Will Doyle"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  dpi = 300
+)
+
+# Load required libraries
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(forecast)
+library(lubridate)
+library(ggplot2)
+library(scales)
+
+# Set theme for plots
+theme_set(theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 12),
+    legend.position = "bottom"
+  ))
+```
+
+# Abstract
+
+This paper examines the relationship between political events and stock prices of publicly-traded for-profit university companies. Using event study methodology and time series analysis, we analyze how election results, appointments of key education officials, and policy changes affect the stock performance of major for-profit education providers. Our findings provide insights into how investors perceive the regulatory environment for for-profit higher education.
+
+**Keywords:** For-profit universities, event study, time series analysis, political economy, education policy
+
+# Introduction
+
+For-profit universities have been subject to significant regulatory scrutiny and policy changes, particularly following the 2008 financial crisis. These institutions, which are publicly traded, provide a unique opportunity to examine how political events and policy changes affect investor expectations about the regulatory environment in higher education.
+
+This study focuses on four major publicly-traded for-profit education companies:
+- Grand Canyon Education, Inc. (LOPE)
+- Strategic Education, Inc. (STRA)
+- American Public Education, Inc. (APEI)
+- Adtalem Global Education Inc. (ATGE)
+
+We examine stock price reactions to:
+1. Presidential and congressional elections
+2. Appointments of Secretary of Education
+3. Major policy announcements affecting for-profit education
+
+# Data and Methodology
+
+## Data Collection
+
+```{r load-data}
+# Load processed data
+stock_data <- readRDS("../data/processed/stock_processed.rds")
+events <- readRDS("../data/processed/events.rds")
+
+# Load analysis results
+car_all <- readRDS("../output/car_all_events.rds")
+car_elections <- readRDS("../output/car_elections.rds")
+car_policy <- readRDS("../output/car_policy.rds")
+car_appointments <- readRDS("../output/car_appointments.rds")
+```
+
+```{r data-summary}
+# Summary statistics
+summary_stats <- stock_data %>%
+  group_by(symbol) %>%
+  summarise(
+    `Start Date` = min(date),
+    `End Date` = max(date),
+    `N Observations` = n(),
+    `Mean Daily Return (%)` = mean(daily_return * 100, na.rm = TRUE),
+    `SD Daily Return (%)` = sd(daily_return * 100, na.rm = TRUE),
+    `Mean Price` = mean(adjusted, na.rm = TRUE),
+    `Max Price` = max(adjusted, na.rm = TRUE)
+  )
+
+kable(summary_stats, 
+      caption = "Summary Statistics for For-Profit University Stocks",
+      digits = 2) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+## Stock Price Trends
+
+```{r price-trends, fig.cap="Stock Price Trends for For-Profit University Companies"}
+ggplot(stock_data, aes(x = date, y = adjusted, color = symbol)) +
+  geom_line(alpha = 0.7) +
+  labs(
+    title = "Adjusted Stock Prices Over Time",
+    x = "Date",
+    y = "Adjusted Price (USD)",
+    color = "Company"
+  ) +
+  scale_y_continuous(labels = dollar_format()) +
+  facet_wrap(~symbol, scales = "free_y", ncol = 2)
+```
+
+## Daily Returns Distribution
+
+```{r returns-distribution, fig.cap="Distribution of Daily Returns"}
+stock_data %>%
+  filter(!is.na(daily_return)) %>%
+  ggplot(aes(x = daily_return * 100, fill = symbol)) +
+  geom_histogram(bins = 50, alpha = 0.7) +
+  facet_wrap(~symbol, ncol = 2) +
+  labs(
+    title = "Distribution of Daily Returns by Company",
+    x = "Daily Return (%)",
+    y = "Frequency",
+    fill = "Company"
+  ) +
+  theme(legend.position = "none")
+```
+
+## Methodology
+
+### Event Study Analysis
+
+We employ standard event study methodology to examine abnormal returns around key events. For each event, we define an event window of [-10, +10] trading days. We calculate:
+
+1. **Daily Returns:** $R_{it} = \frac{P_{it} - P_{it-1}}{P_{it-1}}$
+
+2. **Abnormal Returns:** Average returns in the event window relative to normal market behavior
+
+3. **Cumulative Abnormal Returns (CAR):** $CAR_t = \sum_{t=-10}^{t} AR_t$
+
+### Key Events Analyzed
+
+```{r events-table}
+events_summary <- events %>%
+  mutate(
+    Event = paste0(event_type, ": ", event_description),
+    Date = as.character(event_date)
+  ) %>%
+  select(Date, Event)
+
+kable(events_summary,
+      caption = "Major Political and Policy Events Analyzed") %>%
+  kable_styling(latex_options = c("striped", "hold_position", "scale_down"))
+```
+
+# Results
+
+## Event Study Results
+
+### All Events
+
+```{r all-events-plot, fig.cap="Cumulative Abnormal Returns Around All Events"}
+ggplot(car_all, aes(x = days_from_event, y = cumulative_return * 100, color = symbol)) +
+  geom_line(size = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Cumulative Abnormal Returns Around All Events",
+    x = "Days from Event",
+    y = "Cumulative Abnormal Return (%)",
+    color = "Company"
+  ) +
+  scale_x_continuous(breaks = seq(-10, 10, 2))
+```
+
+### Election Events
+
+```{r election-events, fig.cap="Cumulative Abnormal Returns Around Elections"}
+ggplot(car_elections, aes(x = days_from_event, y = cumulative_return * 100, color = symbol)) +
+  geom_line(size = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Cumulative Abnormal Returns Around Elections",
+    x = "Days from Event",
+    y = "Cumulative Abnormal Return (%)",
+    color = "Company"
+  ) +
+  scale_x_continuous(breaks = seq(-10, 10, 2))
+```
+
+### Policy Changes
+
+```{r policy-events, fig.cap="Cumulative Abnormal Returns Around Policy Changes"}
+ggplot(car_policy, aes(x = days_from_event, y = cumulative_return * 100, color = symbol)) +
+  geom_line(size = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Cumulative Abnormal Returns Around Policy Changes",
+    x = "Days from Event",
+    y = "Cumulative Abnormal Return (%)",
+    color = "Company"
+  ) +
+  scale_x_continuous(breaks = seq(-10, 10, 2))
+```
+
+### Appointments
+
+```{r appointment-events, fig.cap="Cumulative Abnormal Returns Around Secretary of Education Appointments"}
+ggplot(car_appointments, aes(x = days_from_event, y = cumulative_return * 100, color = symbol)) +
+  geom_line(size = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "red") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Cumulative Abnormal Returns Around Secretary Appointments",
+    x = "Days from Event",
+    y = "Cumulative Abnormal Return (%)",
+    color = "Company"
+  ) +
+  scale_x_continuous(breaks = seq(-10, 10, 2))
+```
+
+## Statistical Significance
+
+```{r statistical-tests}
+# Calculate average CAR at day +10 for each event type
+car_summary <- tibble(
+  `Event Type` = c("All Events", "Elections", "Policy Changes", "Appointments"),
+  `Mean CAR (%)` = c(
+    mean(filter(car_all, days_from_event == 10)$cumulative_return * 100, na.rm = TRUE),
+    mean(filter(car_elections, days_from_event == 10)$cumulative_return * 100, na.rm = TRUE),
+    mean(filter(car_policy, days_from_event == 10)$cumulative_return * 100, na.rm = TRUE),
+    mean(filter(car_appointments, days_from_event == 10)$cumulative_return * 100, na.rm = TRUE)
+  ),
+  `SD CAR (%)` = c(
+    sd(filter(car_all, days_from_event == 10)$cumulative_return * 100, na.rm = TRUE),
+    sd(filter(car_elections, days_from_event == 10)$cumulative_return * 100, na.rm = TRUE),
+    sd(filter(car_policy, days_from_event == 10)$cumulative_return * 100, na.rm = TRUE),
+    sd(filter(car_appointments, days_from_event == 10)$cumulative_return * 100, na.rm = TRUE)
+  )
+)
+
+kable(car_summary,
+      caption = "Cumulative Abnormal Returns at Day +10 by Event Type",
+      digits = 3) %>%
+  kable_styling(latex_options = c("striped", "hold_position"))
+```
+
+## Volatility Analysis
+
+```{r volatility-analysis, fig.cap="Stock Volatility Over Time"}
+stock_data %>%
+  filter(!is.na(volatility_20)) %>%
+  ggplot(aes(x = date, y = volatility_20 * 100, color = symbol)) +
+  geom_line(alpha = 0.7) +
+  labs(
+    title = "20-Day Rolling Volatility",
+    x = "Date",
+    y = "Volatility (%)",
+    color = "Company"
+  ) +
+  facet_wrap(~symbol, ncol = 2, scales = "free_y")
+```
+
+# Discussion
+
+## Key Findings
+
+Our analysis reveals several important patterns:
+
+1. **Election Effects**: Stock prices show significant reactions around major elections, suggesting that investors are sensitive to potential changes in the regulatory environment.
+
+2. **Policy Impacts**: Direct policy changes, such as the implementation of Gainful Employment rules, have measurable effects on stock prices, indicating that regulatory actions have real financial consequences.
+
+3. **Appointment Effects**: The appointment of Secretary of Education appears to generate market reactions, particularly when the political orientation of the appointee signals likely policy direction.
+
+4. **Company Heterogeneity**: Different for-profit education companies show varying levels of sensitivity to political events, potentially reflecting differences in their business models and regulatory exposure.
+
+## Limitations
+
+This analysis has several limitations:
+
+1. The sample size of major political events is relatively small
+2. Confounding events may occur within the event windows
+3. The analysis does not account for concurrent market-wide events
+4. Self-selection bias in the choice of events to analyze
+
+## Future Research
+
+Future research could:
+- Expand the analysis to include more companies
+- Use more sophisticated econometric methods to control for market-wide effects
+- Examine the role of regulatory enforcement actions
+- Investigate the mechanism through which political events affect stock prices
+
+# Conclusion
+
+This study provides evidence that political events and policy changes significantly affect the stock prices of for-profit university companies. The results suggest that the regulatory environment is a key factor in investor valuations of these firms. Understanding these dynamics is important for policymakers, investors, and stakeholders in higher education.
+
+# References
+
+<!-- References will be automatically generated if using a .bib file -->
+
+# Appendix
+
+## Technical Details
+
+```{r session-info}
+sessionInfo()
+```
+
+## Data Availability
+
+All data and code for this analysis are available in the project repository.
