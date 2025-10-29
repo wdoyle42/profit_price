@@ -46,14 +46,18 @@ po/*~
 rsconnect/
 
 # Data files (raw data should not be committed)
-data/raw/
+data/raw/*
+!data/raw/README.md
 *.csv
 *.xlsx
 *.xls
 
 # Output files
-output/
-figures/
+output/*
+!output/README.md
+!output/figures/
+!output/tables/
+figures/*
 *.pdf
 *.png
 *.jpg
